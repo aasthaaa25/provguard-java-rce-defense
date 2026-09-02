@@ -3,6 +3,12 @@
 Only concepts genuinely exercised by real code in this repository so far. This grows as
 modules are actually built — see `README.md` "Current status" for what's not built yet.
 
+**Broader concept coverage lives in `study/`** (14 self-contained, run-verified demos —
+see `study/README.md` for the full index): generics, Collections, Streams/lambdas,
+exceptions, NIO, concurrency primitives, CompletableFuture, virtual threads, custom
+annotations/reflection, and design patterns. The table below is specifically what's
+exercised in the *production* `src/main/java/provguard` code, not the study modules.
+
 | Java Concept | Where Used | File/Class | Why Used | Test/Demo | Status |
 |---|---|---|---|---|---|
 | Records | Immutable provenance data | `ProvenanceEvent` | Value object for a captured sink event; immutability matters since it may cross thread boundaries (sensor thread -> reader) | `ProcessExecutionSensorTest` | Done |
