@@ -86,6 +86,7 @@ src/main/java/provguard/
     cli/           DemoMain
 src/test/java/provguard/    mirrors the above, one test class per component
 study/                       14 self-contained Core Java concept demos (see study/README.md)
+fixtures/                    2 minimal local vulnerable programs to demo real blocking (see fixtures/README.md)
 docs/                        architecture, design decisions, roadmap, troubleshooting
 ```
 
