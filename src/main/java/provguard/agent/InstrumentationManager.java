@@ -11,6 +11,7 @@ import provguard.sensors.ProcessExecutionAdvice;
 import javax.naming.InitialContext;
 import java.io.ObjectInputStream;
 import java.lang.instrument.Instrumentation;
+import java.util.Set;
 
 /**
  * Installs ProvGuard's ByteBuddy-based sink hooks onto a live {@link Instrumentation}
@@ -76,11 +77,47 @@ public final class InstrumentationManager {
         // never be one that's shared/consumed across the classloader boundary.
         BootstrapInjector.ensureVisible(instrumentation, InstrumentationManager.class);
 
+        // Referenced here, AFTER the bootstrap append above, so that standard
+        // parent-first delegation resolves this class via the bootstrap
+        // classloader (which can now find it) rather than the application
+        // classloader - giving us a live reference to the actual Module that
+        // provguard.* classes end up in once bootstrap-injected. See the
+        // module-read grant below and docs/DESIGN_DECISIONS.md section 6.
+        Module provguardBootstrapModule = provguard.provenance.SinkType.class.getModule();
+
+        grantModuleRead(instrumentation, ProcessBuilder.class.getModule(), provguardBootstrapModule);
+        grantModuleRead(instrumentation, ObjectInputStream.class.getModule(), provguardBootstrapModule);
+        grantModuleRead(instrumentation, InitialContext.class.getModule(), provguardBootstrapModule);
+
         installOne(instrumentation, ProcessBuilder.class, processAdvice);
         installOne(instrumentation, ObjectInputStream.class, deserializationAdvice);
         installOne(instrumentation, InitialContext.class, jndiAdvice);
 
         installed = true;
+    }
+
+    /**
+     * Grants {@code targetModule} an explicit "reads" edge to the module our
+     * bootstrap-injected classes live in. {@code java.base} (ProcessBuilder,
+     * ObjectInputStream) already reads essentially everything implicitly, so
+     * this is a no-op for those two in practice; it is NOT a no-op for
+     * {@code java.naming} (InitialContext), which does not automatically read
+     * the bootstrap classloader's unnamed module the way java.base does. This
+     * is the concrete fix attempt for the JNDI sensor issue described in
+     * docs/DESIGN_DECISIONS.md section 6.
+     */
+    private static void grantModuleRead(Instrumentation instrumentation, Module targetModule, Module moduleToRead) {
+        if (targetModule.canRead(moduleToRead)) {
+            return;
+        }
+        instrumentation.redefineModule(
+                targetModule,
+                Set.of(moduleToRead),
+                java.util.Map.of(),
+                java.util.Map.of(),
+                Set.of(),
+                java.util.Map.of()
+        );
     }
 
     private static void installOne(Instrumentation instrumentation, Class<?> targetType, AsmVisitorWrapper.ForDeclaredMethods advice) {

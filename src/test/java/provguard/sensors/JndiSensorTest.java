@@ -47,8 +47,7 @@ class JndiSensorTest {
     @Test
     @Disabled("Known unresolved issue: InitialContext#lookup weaving reports success but does not "
             + "actually intercept the call at runtime - see docs/DESIGN_DECISIONS.md section 6. "
-            + "Root cause narrowed to a JPMS module-read boundary specific to java.naming (differs "
-            + "from java.base, where ProcessBuilder/ObjectInputStream both work correctly).")
+            + "Two concrete fix attempts (see section 6) have been tried and ruled out.")
     void capturesProvenanceWhenLookupIsInvoked() throws NamingException {
         try {
             new LazyInitialContext().lookup("provguard-test-jndi-name");

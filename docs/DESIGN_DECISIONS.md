@@ -206,11 +206,24 @@ plausible that `java.naming`'s module boundary doesn't implicitly "read" that un
 module the way `java.base` does (nearly everything reads `java.base` implicitly; that is
 not true of other platform modules), and that this silently prevents the woven advice
 from linking/executing even though ByteBuddy's own retransformation bookkeeping reports
-success. This would need `Instrumentation.redefineModule(...)` to add an explicit reads
-edge from `java.naming` to wherever the bootstrap-injected classes actually end up
-module-wise, which needs a live reference to that specific module (obtained only after
-injection) to construct correctly — attempted analysis, not attempted fix, given the time
-available. `JndiSensorTest.capturesProvenanceWhenLookupIsInvoked`
+success. **Fix attempt 1 (ruled out):** added an explicit `Instrumentation.redefineModule(...)`
+call in `InstrumentationManager`, granting `java.naming` a "reads" edge to the module our
+bootstrap-injected classes actually end up in (obtained via
+`provguard.provenance.SinkType.class.getModule()`, referenced *after* the bootstrap
+append so it resolves through the bootstrap classloader rather than the application one).
+This compiles and runs without error but did **not** fix the issue — the advice still
+never fires. The module-read grant code was left in place (it's harmless, and may still
+be a real prerequisite even if not sufficient alone) but the root cause is evidently
+something else, or something more than a missing reads edge.
+
+Given two concrete, reasoned fix attempts have now been tried and ruled out, further
+debugging is left as documented follow-up rather than continued open-ended guessing.
+A reasonable next step for whoever picks this up: compare bytecode of the *retransformed*
+`InitialContext.class` (dump it via `-Djdk.attach.allowAttachSelf` + a class-dump agent
+option, or ByteBuddy's own dump feature) against the retransformed `ProcessBuilder.class`
+to see whether the `Advice` bytecode was actually inlined at all, which would show
+definitively whether this is a weaving-time problem or a link/execution-time one.
+`JndiSensorTest.capturesProvenanceWhenLookupIsInvoked`
 is marked `@Disabled` with this explanation rather than deleted, silently left failing, or
 "fixed" by weakening the assertion — the sensor code is real and the failure is real;
 follow-up work should start by comparing `javax.naming.InitialContext`'s and
