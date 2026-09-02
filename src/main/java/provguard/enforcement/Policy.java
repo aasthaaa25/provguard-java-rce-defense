@@ -24,10 +24,19 @@ public final class Policy {
             "provguard.sensors.ProcessExecutionSensorTest",
             "provguard.sensors.DeserializationSensorTest",
             "provguard.sensors.JndiSensorTest",
-            "provguard.detection.OneClassDistanceDetectorTest"
+            "provguard.detection.OneClassDistanceDetectorTest",
+            "DeserializationOverheadBenchmark",
+            "DatasetCollector"
     ));
 
     public static volatile boolean blockingEnabled = true;
+
+    /**
+     * Off by default so existing tests/demos don't silently start writing
+     * trace files. See provguard.runtime.TraceWriter and TraceWriterTest for
+     * where this is actually exercised.
+     */
+    public static volatile boolean tracingEnabled = false;
 
     private Policy() {
     }
