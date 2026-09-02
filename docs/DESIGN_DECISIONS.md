@@ -13,21 +13,29 @@ minimize POM complexity while proving the core mechanism works at all. Splitting
 `provguard-agent` / `provguard-sensors` / `provguard-provenance` / etc. modules is
 follow-up work once there's more than one sensor to justify the boundaries.
 
-## 2. JDK version: built against JDK 26, NOT the recommended JDK 21 LTS
+## 2. JDK version: initially JDK 26, migrated to and verified on JDK 21 LTS
 
-The only JDK present on the dev machine was Eclipse Adoptium **26.0.2** (a very recent,
-non-LTS release). The ProvGuard brief explicitly asks for Java 21 LTS. Under time
-pressure, the decision was made to build against what was actually installed rather than
-spend the budget installing another JDK, and to document the consequences honestly
-instead of silently deviating from the brief.
+The only JDK present on the dev machine at the start of this project was Eclipse Adoptium
+**26.0.2** (a very recent, non-LTS release). The ProvGuard brief explicitly asks for Java
+21 LTS. Under initial time pressure, the decision was made to build against what was
+actually installed rather than spend the budget installing another JDK, with the
+consequences documented honestly rather than silently deviated from.
 
-**Real consequence hit during this session:** ByteBuddy 1.15.11 (current stable at the
-time) does not officially recognize JDK 26 by version-check, though in practice
-`-Dnet.bytebuddy.experimental=true` was sufficient to get past that — no ByteBuddy code
-changes were needed. Since JDK 26 support in ByteBuddy is best-effort/unofficial as of
-this build, **this project should be re-verified against JDK 21 LTS before being relied
-upon**, and `-Dnet.bytebuddy.experimental=true` is currently required (see `pom.xml`
-surefire `argLine`, and the `-D` flag on the `DemoMain` command in `README.md`).
+**Real consequence hit at the time:** ByteBuddy 1.15.11 (current stable) does not
+officially recognize JDK 26 by version-check; `-Dnet.bytebuddy.experimental=true` was
+needed to get past that on JDK 26.
+
+**Resolved:** Temurin JDK 21.0.12.1 was later installed alongside JDK 26, and the full
+build was actually re-verified against it — `mvn clean test` with `JAVA_HOME` pointed at
+JDK 21: same result, 21 tests passing, 1 skipped (JNDI, unrelated). The real `-javaagent`
+demo (`DemoMain`) was also re-run under JDK 21 and works correctly.
+
+**A genuinely useful finding from doing this for real rather than assuming:**
+`-Dnet.bytebuddy.experimental=true` is **not needed at all on JDK 21** — it was
+specifically a JDK-26-version-recognition workaround. It's left in `pom.xml`'s surefire
+`argLine` anyway (harmless on JDK 21, and keeps the build working if someone still runs
+it on JDK 26), but new commands documented for JDK 21 use omit it. See `README.md`
+"Requirements" for the exact commands for each JDK.
 
 ## 3. Bytecode instrumentation: ByteBuddy, no ASM
 

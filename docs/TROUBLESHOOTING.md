@@ -51,6 +51,16 @@ filter the injected jar to `provguard/` only) apply generally, not just to this 
 
 ## JDK version
 
-This machine only had JDK 26 (very new, non-LTS) installed — see
-`docs/DESIGN_DECISIONS.md` §2. `-Dnet.bytebuddy.experimental=true` was required to get
-ByteBuddy to proceed on it. Re-verify on JDK 21 LTS before trusting this beyond a demo.
+Resolved — see `docs/DESIGN_DECISIONS.md` §2. This machine only had JDK 26 (very new,
+non-LTS) installed initially, requiring `-Dnet.bytebuddy.experimental=true` to get
+ByteBuddy to proceed. Temurin JDK 21 LTS was later installed
+(`C:\Users\<user>\tools\jdk-21.0.12.1+1` on this machine — downloaded from
+`https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse`,
+`winget` wasn't usable here either, same Avast TLS interception issue as Maven above) and
+the full build + test suite + real demo were re-verified against it — no experimental
+flag needed on 21. To build with JDK 21 specifically:
+```powershell
+$env:JAVA_HOME = "C:\Users\<user>\tools\jdk-21.0.12.1+1"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+```
+then run `mvn` as usual.

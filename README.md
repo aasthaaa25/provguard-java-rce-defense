@@ -30,12 +30,13 @@ mocks: `ProcessExecutionSensorTest`, `DeserializationSensorTest`, `GraphBuilderT
 `AllowlistDetectorTest`, `PolicyEngineTest`, `EnforcementEngineTest`,
 `OneClassDistanceDetectorTest`.
 
-Run it yourself:
+Run it yourself (JDK 21):
 ```
 mvn clean test      # runs the full real test suite
 mvn clean package   # builds target/provguard-agent.jar
-java -Dnet.bytebuddy.experimental=true -javaagent:target/provguard-agent.jar -cp target/provguard-agent.jar provguard.cli.DemoMain
+java -javaagent:target/provguard-agent.jar -cp target/provguard-agent.jar provguard.cli.DemoMain
 ```
+(On JDK 26, add `-Dnet.bytebuddy.experimental=true` before `-javaagent`.)
 `DemoMain` demonstrates all four combinations live: an allowed process execution, a
 blocked one (untrusted caller), an allowed deserialization, and a blocked one — with
 real console output showing the block actually happening.
@@ -70,11 +71,13 @@ environment-specific issues (TLS interception, JDK version, Maven not installed)
 
 ## Requirements
 
-- JDK: built and tested against **JDK 26** (what was available on this machine) — see
-  `docs/DESIGN_DECISIONS.md` for why the project should migrate to a JDK 21 LTS build
-  before this goes further, and what's untested as a result.
+- JDK: **21 LTS recommended** (Temurin 21.0.12.1 — re-verified working, full test suite
+  and the real demo both pass). Also works on JDK 26 (what development started on before
+  migrating — see `docs/DESIGN_DECISIONS.md` §2), but that's a very recent non-LTS
+  release; 21 is the one to actually rely on.
 - Maven 3.9.9 (not on PATH by default on this machine — see `docs/TROUBLESHOOTING.md`)
-- Run with `-Dnet.bytebuddy.experimental=true` (needed because of the JDK 26 point above)
+- On JDK 21: no extra flags needed. On JDK 26 only: add `-Dnet.bytebuddy.experimental=true`
+  (a JDK-26-version-recognition workaround, confirmed unnecessary on 21).
 
 ## Project layout
 
