@@ -15,14 +15,16 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Proves the sensor actually intercepts a real JDK call, end to end:
- * dynamically attaches an agent to this very test JVM (no -javaagent flag
- * needed), installs the ProcessBuilder hook, invokes ProcessBuilder.start()
- * for real, and asserts a ProvenanceEvent was captured with a call stack that
- * genuinely includes this test method.
+ * Proves the sensor actually intercepts a real JDK call, end to end: dynamically
+ * attaches an agent to this very test JVM, installs the ProcessBuilder hook,
+ * invokes ProcessBuilder.start() for real, and asserts a ProvenanceEvent was
+ * captured with a call stack that genuinely includes this test class. Also
+ * proves the enforcement layer's BLOCK path genuinely prevents the sink from
+ * running, for a caller not on the trusted allowlist.
  */
 class ProcessExecutionSensorTest {
 
@@ -39,6 +41,7 @@ class ProcessExecutionSensorTest {
 
     @Test
     void capturesProvenanceWhenProcessBuilderStartIsInvoked() throws IOException, InterruptedException {
+        // ProcessExecutionSensorTest is on the Policy allowlist, so this is allowed.
         ProcessBuilder pb = new ProcessBuilder("cmd", "/c", "echo provguard-test");
         Process process = pb.start();
         process.waitFor();
@@ -57,5 +60,32 @@ class ProcessExecutionSensorTest {
     @Test
     void doesNotCaptureAnythingBeforeStartIsCalled() {
         assertEquals(0, EventBuffer.INSTANCE.size(), "Buffer should be empty until a sink is actually invoked");
+    }
+
+    @Test
+    void blocksSinkCallFromCallerNotOnTheAllowlist() {
+        // UntrustedCaller is NOT on the Policy allowlist, so this must be blocked -
+        // and blocked means the real ProcessBuilder#start() body never executes.
+        // Asserted against SecurityException (SinkBlockedException's JDK-native
+        // superclass), not the exact provguard.enforcement.SinkBlockedException
+        // class object: that class is loaded via the bootstrap classloader when
+        // thrown from woven sink code, and comparing against a Class literal
+        // resolved by the test's own classloader is exactly the kind of
+        // cross-classloader identity trap documented in docs/DESIGN_DECISIONS.md.
+        UntrustedCaller untrusted = new UntrustedCaller();
+
+        SecurityException thrown = assertThrows(SecurityException.class, untrusted::runProcess);
+        assertEquals("provguard.enforcement.SinkBlockedException", thrown.getClass().getName());
+        assertTrue(thrown.getMessage().contains("PROCESS_EXECUTION"));
+
+        List<ProvenanceEvent> events = EventBuffer.INSTANCE.getAll();
+        assertFalse(events.isEmpty(), "The sensor should still have captured provenance before blocking");
+    }
+
+    /** A caller deliberately absent from Policy's trusted allowlist. */
+    static final class UntrustedCaller {
+        void runProcess() throws IOException {
+            new ProcessBuilder("cmd", "/c", "echo should-be-blocked").start();
+        }
     }
 }

@@ -1,35 +1,38 @@
 # Core Java Coverage Matrix
 
-Only concepts genuinely exercised by real code in this repository so far. This grows as
-modules are actually built — see `README.md` "Current status" for what's not built yet.
+Only concepts genuinely exercised by real code in this repository. This grows as modules
+are actually built — see `README.md` "Current status" for what's not built yet.
 
 **Broader concept coverage lives in `study/`** (14 self-contained, run-verified demos —
 see `study/README.md` for the full index): generics, Collections, Streams/lambdas,
 exceptions, NIO, concurrency primitives, CompletableFuture, virtual threads, custom
 annotations/reflection, and design patterns. The table below is specifically what's
-exercised in the *production* `src/main/java/provguard` code, not the study modules.
+exercised in the *production* `src/main/java/provguard` code.
 
-| Java Concept | Where Used | File/Class | Why Used | Test/Demo | Status |
+| Java Concept | Where Used | File/Class | Why | Test/Demo | Status |
 |---|---|---|---|---|---|
-| Records | Immutable provenance data | `ProvenanceEvent` | Value object for a captured sink event; immutability matters since it may cross thread boundaries (sensor thread -> reader) | `ProcessExecutionSensorTest` | Done |
-| Enums | Sink categorization | `SinkType` | Closed, type-safe vocabulary for sink kinds | `ProcessExecutionSensorTest` | Done |
+| Records | Immutable value types | `ProvenanceEvent`, `DetectionResult` | Value objects that may cross thread boundaries (sensor thread → reader) | Multiple tests | Done |
+| Sealed interfaces + pattern-matching `switch` | Enforcement outcomes | `Decision` (`Allow`/`Log`/`Block`), switched exhaustively in `EnforcementEngine` | Compiler-checked exhaustiveness for a security decision type — adding a 4th outcome forces every call site to be updated | `EnforcementEngineTest` | Done |
+| Enums | Sink categorization | `SinkType` | Closed, type-safe vocabulary | Multiple tests | Done |
 | `java.lang.instrument` (Java agents) | Agent entrypoint | `AgentBootstrap` (`premain`, `agentmain`) | Required mechanism for JVM-level instrumentation | Manual run via `-javaagent`, see README | Done |
-| ByteBuddy `AgentBuilder` + `Advice` | Sink hooking | `InstrumentationManager`, `ProcessExecutionAdvice` | High-level, safer bytecode weaving than raw ASM | `ProcessExecutionSensorTest` | Done |
-| `StackWalker` | Provenance capture | `StackWalkerCollector` | Lazy, low-overhead call-stack inspection (vs. `new Throwable().getStackTrace()`) | `ProcessExecutionSensorTest` (asserts stack contents) | Done |
-| Class loaders (bootstrap vs. application) | Cross-classloader callback from woven JDK code | `BootstrapInjector` | Real, non-optional JVM constraint when instrumenting bootstrap-loaded classes and calling back into agent code — see `docs/DESIGN_DECISIONS.md` for 3 real bugs this caused and how they were fixed | `ProcessExecutionSensorTest` (implicitly — the test only passes because this works correctly) | Done |
-| `java.util.jar` / `java.nio.file` (`Files.walk`, `Path`, try-with-resources) | Building the bootstrap-visible temp jar | `BootstrapInjector` | Needs to zip either a loose classes directory or filter an existing jar at runtime | Exercised every test run | Done |
-| Concurrency: `CopyOnWriteArrayList` | Thread-safe event storage | `EventBuffer` | Sink hits can occur on multiple threads; safe concurrent iteration without external locking for a write-rare/read-more workload | `ProcessExecutionSensorTest` | Done (simple; not the final `provguard-runtime` design) |
-| Singleton via `static final` (not an enum singleton, deliberately) | Shared event sink accessible from inlined Advice bytecode | `EventBuffer.INSTANCE` | Advice-inlined code can't receive constructor-injected dependencies; a static holder is the standard pattern here | `ProcessExecutionSensorTest` | Done |
-| `Optional`-free defensive design / no null returns | `EventBuffer.getAll()` returns `List.copyOf(...)` | `EventBuffer` | Avoids exposing the mutable internal list or returning null | — | Done |
-| Streams + `Collectors` | Turning `StackWalker` frames into a `List<String>` | `StackWalkerCollector` | Declarative frame-to-string mapping | `ProcessExecutionSensorTest` | Done |
-| JUnit 5 (`@BeforeAll`, `@BeforeEach`) + dynamic self-attach (`ByteBuddyAgent.install()`) | Testing agent behavior without `-javaagent` | `ProcessExecutionSensorTest` | Proves real interception happens, not just that code compiles | Is the test | Done |
+| ByteBuddy `AgentBuilder` + `Advice` | Sink hooking (×3) | `InstrumentationManager`, `ProcessExecutionAdvice`, `DeserializationAdvice`, `JndiAdvice` | High-level, safer bytecode weaving than raw ASM | Sensor tests | Done (2 of 3 actually intercept at runtime — see `docs/DESIGN_DECISIONS.md` §6) |
+| `StackWalker` | Provenance capture | `StackWalkerCollector` | Lazy, low-overhead call-stack inspection | Sensor tests | Done |
+| Class loaders (bootstrap vs. application) | Cross-classloader callback from woven JDK code | `BootstrapInjector` | Real, non-optional JVM constraint — see `docs/DESIGN_DECISIONS.md` for six real bugs this class of problem caused and how each was fixed | All sensor tests (implicitly — they only pass because this works) | Done |
+| `java.util.jar` / `java.nio.file` | Building the bootstrap-visible temp jar | `BootstrapInjector` | Zips either a loose classes directory or filters an existing (possibly shaded) jar at runtime | Exercised every test run | Done |
+| Concurrency: `CopyOnWriteArrayList` | Thread-safe event storage | `EventBuffer` | Sink hits can occur on multiple threads; safe concurrent iteration, write-rare/read-more workload | Sensor tests | Done (simple; not the final `provguard-runtime` design) |
+| Static holder pattern (deliberately, not enum singleton) | Shared config accessible from inlined Advice bytecode | `EventBuffer.INSTANCE`, `Policy.detector`/`blockingEnabled` | Advice-inlined code can't receive constructor-injected dependencies | Sensor tests | Done |
+| Interfaces as a Strategy point | Pluggable detection algorithm | `AnomalyDetector` (implemented by `AllowlistDetector`; future ML detectors implement the same interface) | Callers never branch on concrete detector type | `AllowlistDetectorTest` | Done |
+| Custom unchecked exception extending a JDK type | Enforcement veto | `SinkBlockedException extends SecurityException` | Both semantically correct (a real security denial) and practically important — see `docs/DESIGN_DECISIONS.md` §4F for why extending a bootstrap-native JDK type avoids a real cross-classloader identity bug | `EnforcementEngineTest`, sensor tests | Done |
+| `equals()`/`hashCode()` contract | Graph node/edge deduplication | `GraphNode`, `GraphEdge` | Needed for correct `Set` membership when building a provenance graph | `GraphBuilderTest` | Done |
+| Streams + `Collectors` | Turning `StackWalker` frames into a `List<String>` | `StackWalkerCollector` | Declarative frame-to-string mapping | Sensor tests | Done |
+| JUnit 5 (`@BeforeAll`, `@BeforeEach`, `@Disabled`) + dynamic self-attach (`ByteBuddyAgent.install()`) | Testing agent behavior without `-javaagent` | All sensor tests | Proves real interception happens, not just that code compiles; `@Disabled` used honestly on the one known-broken sensor rather than deleting or faking the test | Is the test suite | Done |
 
 ## Not yet covered (planned, not fabricated here)
 
-Generics/bounded wildcards, most of the Collections framework beyond one list type,
-functional interfaces beyond streams, checked/custom exceptions, NIO channels/buffers
-(only `Files`/`Path` used so far), virtual threads, `ExecutorService`/`CompletableFuture`,
-`ReentrantLock`/Atomics, reflection beyond what ByteBuddy does internally, custom
-annotations, JPMS, JFR, design patterns beyond an implicit Strategy-ish shape in
-`InstrumentationManager`. These land as the corresponding modules (`provguard-graph`,
-`provguard-detection`, `provguard-enforcement`, `provguard-runtime`) get built.
+Generics/bounded wildcards, most of the Collections framework beyond `Set`/`List`,
+checked exceptions, NIO channels/buffers beyond `Files`/`Path` (used in `BootstrapInjector`),
+virtual threads, `ExecutorService`/`CompletableFuture`, `ReentrantLock`/Atomics, reflection
+beyond what ByteBuddy does internally, custom annotations, JPMS, JFR, and design patterns
+like Factory/Builder/Observer — all of these exist in the `study/` modules (see
+`study/README.md`), but not yet in the production `provguard.*` code, because no
+production module has genuinely needed them yet.

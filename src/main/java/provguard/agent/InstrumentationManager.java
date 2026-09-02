@@ -2,9 +2,14 @@ package provguard.agent;
 
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.asm.AsmVisitorWrapper;
 import net.bytebuddy.matcher.ElementMatchers;
+import provguard.sensors.DeserializationAdvice;
+import provguard.sensors.JndiAdvice;
 import provguard.sensors.ProcessExecutionAdvice;
 
+import javax.naming.InitialContext;
+import java.io.ObjectInputStream;
 import java.lang.instrument.Instrumentation;
 
 /**
@@ -12,15 +17,26 @@ import java.lang.instrument.Instrumentation;
  * instance. Called from both real agent attach paths ({@link AgentBootstrap#premain}
  * / {@link AgentBootstrap#agentmain}) and from tests (via
  * {@code net.bytebuddy.agent.ByteBuddyAgent.install()}), so it must work whether
- * the target class ({@code java.lang.ProcessBuilder}) is already loaded (dynamic
- * attach / test case) or not yet loaded (premain, before the app's main() runs) —
+ * each target class is already loaded (dynamic attach / test case) or not yet
+ * loaded (premain, before the app's main() runs) —
  * {@link AgentBuilder.RedefinitionStrategy#RETRANSFORMATION} handles both.
  *
- * Only one sink is wired up in this slice: {@code ProcessBuilder.start()}
- * (process execution — one of the four sink categories in the ProvGuard threat
- * model). Deserialization, JNDI lookup, and script evaluation sensors are not
- * yet implemented; see docs/ARCHITECTURE.md and docs/WEEKLY_ROADMAP.md for the
- * planned order.
+ * Three sinks are wired up: {@code ProcessBuilder.start()} (process execution),
+ * {@code ObjectInputStream.resolveClass()} (deserialization), and
+ * {@code InitialContext.lookup(String)} (JNDI lookup). Script evaluation
+ * (the fourth category in the ProvGuard threat model) is NOT implemented:
+ * this JDK ships no bundled {@code ScriptEngine} implementation (Nashorn was
+ * removed after JDK 14), so there is nothing to genuinely hook and test on
+ * this machine without adding an external scripting library — see
+ * docs/DESIGN_DECISIONS.md.
+ *
+ * Each sink is installed via its OWN independent {@code AgentBuilder}
+ * instance rather than chaining multiple {@code .type().transform()} pairs
+ * onto one builder: chaining was tried first and, for reasons not fully
+ * root-caused, silently caused earlier rules (ProcessBuilder, ObjectInputStream)
+ * in the chain to never fire while only the last rule installed correctly —
+ * see docs/DESIGN_DECISIONS.md section 4D. Three independent installs sidesteps
+ * the issue entirely and is arguably simpler to reason about besides.
  */
 public final class InstrumentationManager {
 
@@ -34,35 +50,45 @@ public final class InstrumentationManager {
             return;
         }
 
-        // Resolve the Advice visitor BEFORE mutating the bootstrap classloader search
-        // path below. Advice.to(...) re-analyzes the advice class's methods/annotations
-        // each time it is called; if that resolution instead happened lazily inside the
-        // transform callback (i.e. after appendToBootstrapClassLoaderSearch has already
-        // run), it intermittently fails to find the @Advice.OnMethodEnter method.
-        net.bytebuddy.asm.AsmVisitorWrapper.ForDeclaredMethods adviceVisitor = Advice
-                .to(ProcessExecutionAdvice.class)
+        // Resolve every Advice visitor BEFORE mutating the bootstrap classloader
+        // search path below - see docs/DESIGN_DECISIONS.md section 4A for why
+        // computing these lazily inside a transform callback intermittently
+        // fails with "No advice defined by class ...".
+        AsmVisitorWrapper.ForDeclaredMethods processAdvice = Advice.to(ProcessExecutionAdvice.class)
                 .on(ElementMatchers.named("start")
                         .and(ElementMatchers.takesArguments(0))
                         .and(ElementMatchers.isPublic()));
 
-        // Use InstrumentationManager itself (not EventBuffer) as the location marker.
-        // EventBuffer must remain UNLOADED until after this call: if anything forced it
-        // to load via the application classloader first, the bootstrap classloader would
-        // later load its OWN separate copy when the woven ProcessBuilder code references
-        // it - two distinct classes with two distinct EventBuffer.INSTANCE statics, so the
-        // sensor and the test/demo consumer would silently talk to different buffers.
+        AsmVisitorWrapper.ForDeclaredMethods deserializationAdvice = Advice.to(DeserializationAdvice.class)
+                .on(ElementMatchers.named("resolveClass")
+                        .and(ElementMatchers.takesArguments(1))
+                        .and(ElementMatchers.isProtected()));
+
+        AsmVisitorWrapper.ForDeclaredMethods jndiAdvice = Advice.to(JndiAdvice.class)
+                .on(ElementMatchers.named("lookup")
+                        .and(ElementMatchers.takesArguments(1))
+                        .and(ElementMatchers.takesArgument(0, String.class))
+                        .and(ElementMatchers.isPublic()));
+
+        // Use InstrumentationManager itself (not any provguard.provenance/
+        // graph/detection/enforcement class) as the location marker - see
+        // docs/DESIGN_DECISIONS.md section 4B for why the marker class must
+        // never be one that's shared/consumed across the classloader boundary.
         BootstrapInjector.ensureVisible(instrumentation, InstrumentationManager.class);
 
-        new AgentBuilder.Default()
-                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                .with(AgentBuilder.Listener.StreamWriting.toSystemOut().withTransformationsOnly())
-                .with(AgentBuilder.InstallationListener.StreamWriting.toSystemOut())
-                .ignore(ElementMatchers.none())
-                .type(ElementMatchers.is(ProcessBuilder.class))
-                .transform((builder, typeDescription, classLoader, module, protectionDomain) -> builder
-                        .visit(adviceVisitor))
-                .installOn(instrumentation);
+        installOne(instrumentation, ProcessBuilder.class, processAdvice);
+        installOne(instrumentation, ObjectInputStream.class, deserializationAdvice);
+        installOne(instrumentation, InitialContext.class, jndiAdvice);
 
         installed = true;
+    }
+
+    private static void installOne(Instrumentation instrumentation, Class<?> targetType, AsmVisitorWrapper.ForDeclaredMethods advice) {
+        new AgentBuilder.Default()
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .ignore(ElementMatchers.none())
+                .type(ElementMatchers.is(targetType))
+                .transform((builder, typeDescription, classLoader, module, protectionDomain) -> builder.visit(advice))
+                .installOn(instrumentation);
     }
 }
