@@ -43,6 +43,28 @@ final class BootstrapInjector {
     /** Only files under this package prefix are ever copied into the bootstrap-visible jar. */
     private static final String OWN_PACKAGE_PREFIX = "provguard/";
 
+    /**
+     * Classes excluded even though they're under our own package prefix -
+     * this list exists for the exact same reason ByteBuddy's classes are
+     * excluded (see the class Javadoc): these classes pull in a third-party
+     * dependency (ONNX Runtime) that is NOT itself appended to the bootstrap
+     * search path. If OnnxOneClassDetector were injected here, parent-first
+     * classloader delegation would make the BOOTSTRAP classloader (not the
+     * application classloader) the defining loader for it the moment any
+     * code tries to load it - and the bootstrap classloader cannot see
+     * onnxruntime's classes, so it would fail with NoClassDefFoundError the
+     * first time OnnxOneClassDetector referenced ai.onnxruntime.OrtException.
+     * This is a real, verified regression (found while adding
+     * OnnxOneClassDetectorTest): it is never reached from woven JDK-core-class
+     * bytecode (SensorPipeline only calls the currently-enforced detector,
+     * AllowlistDetector, per Policy) so it does not need bootstrap visibility
+     * at all - only application-classloader visibility, which it already has
+     * via the normal test/runtime classpath.
+     */
+    private static final String[] EXCLUDED_PREFIXES = {
+            "provguard/detection/OnnxOneClassDetector"
+    };
+
     static void ensureVisible(Instrumentation instrumentation, Class<?> markerClass) {
         try {
             File origin = new File(markerClass.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -75,7 +97,7 @@ final class BootstrapInjector {
              Stream<Path> walk = Files.walk(base)) {
             for (Path path : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
                 String entryName = base.relativize(path).toString().replace(File.separatorChar, '/');
-                if (!entryName.startsWith(OWN_PACKAGE_PREFIX)) {
+                if (!entryName.startsWith(OWN_PACKAGE_PREFIX) || isExcluded(entryName)) {
                     continue;
                 }
                 jos.putNextEntry(new JarEntry(entryName));
@@ -93,7 +115,7 @@ final class BootstrapInjector {
             Enumeration<JarEntry> entries = source.entries();
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
-                if (entry.isDirectory() || !entry.getName().startsWith(OWN_PACKAGE_PREFIX)) {
+                if (entry.isDirectory() || !entry.getName().startsWith(OWN_PACKAGE_PREFIX) || isExcluded(entry.getName())) {
                     continue;
                 }
                 jos.putNextEntry(new JarEntry(entry.getName()));
@@ -104,6 +126,15 @@ final class BootstrapInjector {
             }
         }
         return tempJar;
+    }
+
+    private static boolean isExcluded(String entryName) {
+        for (String prefix : EXCLUDED_PREFIXES) {
+            if (entryName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static File createTempJar() throws IOException {

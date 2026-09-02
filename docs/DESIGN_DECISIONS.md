@@ -43,7 +43,7 @@ Only ByteBuddy was needed for this slice (an `Advice`-based hook on
 `ProcessBuilder#start()`). No case for dropping to raw ASM has come up yet — this
 matches the brief's instruction not to use ASM just to inflate the technology list.
 
-## 4. Seven real bugs found and fixed while building this (the most valuable content in this file)
+## 4. Eight real bugs found and fixed while building this (the most valuable content in this file)
 
 Both bugs are specific to instrumenting a **bootstrap-classloader-loaded** JDK class
 (`java.lang.ProcessBuilder`) with `Advice`-inlined bytecode that calls back into our own
@@ -233,6 +233,37 @@ self-attach calls were then removed as dead weight.
 `net.bytebuddy.agent.ByteBuddyAgent` was never on the trusted allowlist. This is a real
 demonstration that enforcement works exactly as designed - it just meant the (now
 unnecessary) dynamic self-attach calls needed to go regardless.
+
+### Bug H — a class that pulls in a third-party dependency got swept into the bootstrap-injected jar
+
+**Symptom:** found while adding `OnnxOneClassDetector` (real ONNX Runtime Java inference,
+see `docs/ML_PIPELINE.md`) and its test. Both new unit tests failed with
+`NoClassDefFoundError: ai/onnxruntime/OrtException`, even though `onnxruntime` was a normal
+compile-scope Maven dependency, present in `.m2`, and the code compiled cleanly.
+
+**Root cause:** `BootstrapInjector` (see its own Javadoc, and Bug C above) copies every
+`provguard/**` class - including `OnnxOneClassDetector` - into the jar it appends to the
+bootstrap classloader's search path, because that's needed for the small set of classes
+actually reachable from woven JDK-core-class bytecode. Classloader delegation is
+parent-first: when the application classloader needs to load
+`provguard.detection.OnnxOneClassDetector`, it asks its parent chain (platform, then
+bootstrap) *before* trying itself. Since bootstrap now also has this class available (via
+the injected jar), bootstrap becomes its defining loader - and when that
+bootstrap-defined class then needs `ai.onnxruntime.OrtException`, it can only search the
+bootstrap classloader's own visibility, which never had `onnxruntime.jar` appended to it.
+Same underlying mechanism as Bug C, now triggered by a *new* class rather than a
+third-party library bundled in a shaded jar.
+
+**Fix:** added an explicit exclusion list to `BootstrapInjector` (`EXCLUDED_PREFIXES`,
+currently just `provguard/detection/OnnxOneClassDetector`) - classes that depend on a
+library not itself bootstrap-visible, and that are never reached from woven bytecode (only
+`AllowlistDetector`, the detector actually wired into `Policy`, is called from inside
+`SensorPipeline`), are excluded from the injected jar and load normally via the
+application classloader instead. A more general fix (computing bootstrap-reachability by
+real analysis rather than a manual exclusion list) was considered and rejected as
+over-engineering for a two-entry list; documented here so the next person adding a
+detector with its own third-party dependency knows to check this file first, not
+rediscover the bug.
 
 ## 6. A known, unresolved limitation (documented, not hidden)
 

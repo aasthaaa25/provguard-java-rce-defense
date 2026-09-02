@@ -15,6 +15,7 @@ out/
 ml/venv/
 ml/__pycache__/
 *.onnx
+!ml/one_class_svm.onnx
 dataset/processed/
 dependency-reduced-pom.xml
 .github/workflows/ci.yml
