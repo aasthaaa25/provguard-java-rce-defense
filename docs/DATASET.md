@@ -1,33 +1,45 @@
 # Dataset
 
-**Status: not started.** No dataset — benign or malicious — has been collected or
-generated. This document records the plan only.
+**Status: a real, small, local dataset exists — it is NOT the real exploit-chain dataset
+the original plan calls for.** See `dataset/README.md` for the full honesty note; summary
+here.
 
-## Planned structure (from the original ProvGuard research plan)
+## What actually exists
+
+`provguard.tools.DatasetGenerator` (source in `src/main/java/provguard/tools/`) actually
+triggers real `ProcessBuilder`/`ObjectInputStream` sink calls through the live agent —
+both from a trusted caller (benign) and from a caller deliberately absent from the
+trusted allowlist (malicious-*shaped*) — and writes the genuinely captured
+depth/edge-count/caller data to:
 
 ```
 dataset/
-    benign/       # traces from real, legitimately-running code
-    malicious/    # traces from reproduced exploit chains (ysoserial, JNDI-Injection-Exploit-Plus, etc.)
-    processed/    # feature-extracted, ready for training (not committed if large)
-    schemas/      # documented structure of the above
+    benign/local-benign-traces.jsonl              (40 real captured traces)
+    malicious/local-malicious-shaped-traces.jsonl  (40 real captured traces)
 ```
 
-## Planned sources
+Every value in those files came from an actual `StackWalker` capture during a real run —
+not invented, not hand-typed.
 
-- **Benign traces**: running this repository's own `DemoMain` and sensor tests already
-  produces real `ProvenanceEvent`/`ProvenanceGraph` instances for the two working sinks —
-  that data is not yet being persisted/collected into a dataset, but the capture
-  mechanism to do so already exists (`provguard.provenance.EventBuffer`,
-  `provguard.graph.GraphBuilder`).
-- **Malicious traces**: the plan calls for reproducing real gadget chains via `ysoserial`
-  and JNDI injection payloads against local, self-contained vulnerable fixtures — no such
-  fixtures exist in this repository yet (the `fixtures/` directory from the original plan
-  was never created).
+## What does NOT exist (stated plainly, per project policy)
 
-## Why nothing is committed here yet
+- No real exploit-chain integration: no `ysoserial`, `GCMiner`, or
+  `JNDI-Injection-Exploit-Plus` payloads are used or bundled. The "malicious" label means
+  "structurally similar call from an untrusted caller," not "a real gadget chain."
+- No `fixtures/vulnerable-*` targets were attacked with real payloads to generate this
+  data — the two existing fixtures (`fixtures/vulnerable-command-execution`,
+  `fixtures/vulnerable-deserialization`) demonstrate real blocking but were not used as
+  the basis for this dataset (the `DatasetGenerator` calls the sinks directly).
+- `dataset/schemas/` and `dataset/processed/` (mentioned in the original plan's directory
+  layout) don't exist as separate artifacts — the schema is documented inline in
+  `dataset/README.md`'s table instead, and there's no separate feature-processing step
+  beyond what `DatasetGenerator` already does at capture time.
 
-Per the original plan's own guidance: commit small examples/schemas, not large generated
-datasets, and provide reproducible generation scripts rather than static data dumps.
-Since no generation pipeline exists yet, there is nothing to commit that wouldn't be
-fabricated placeholder data.
+## Why this is still useful, honestly
+
+It's real enough to exercise both existing detectors meaningfully:
+`AllowlistDetector` (caller-identity-based) and `OneClassDistanceDetector` (depth/edge-count
+structural features) both operate on exactly this kind of data, and `docs/EVALUATION.md`
+reports real precision/recall/F1 numbers computed against it. What it can't honestly
+support is any claim about detecting *real* gadget chains, since none exist in this
+dataset — that remains real follow-up work.

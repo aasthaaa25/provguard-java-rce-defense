@@ -26,7 +26,7 @@ public final class Policy {
             "provguard.sensors.JndiSensorTest",
             "provguard.detection.OneClassDistanceDetectorTest",
             "DeserializationOverheadBenchmark",
-            "DatasetCollector"
+            "provguard.tools.DatasetGenerator"
     ));
 
     public static volatile boolean blockingEnabled = true;
