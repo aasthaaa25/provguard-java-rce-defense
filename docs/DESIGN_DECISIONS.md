@@ -190,12 +190,27 @@ semantically correct: a blocked security-sensitive operation is exactly what
 **`InitialContext#lookup(String)` (the JNDI sink) does not actually intercept calls at
 runtime, despite `AgentBuilder`'s listener reporting a clean, successful `TRANSFORM`.**
 The real `lookup()` body runs unmodified — no `Advice.OnMethodEnter` code executes, no
-`ProvenanceEvent` is captured, confirmed via targeted diagnostic runs. This was **not**
-root-caused in the time available. Candidate explanations not yet investigated: something
-specific to `InitialContext` living in the `java.naming` platform module (vs.
-`ProcessBuilder`/`ObjectInputStream` in `java.base`); the structure of `lookup(String)`'s
-compiled bytecode interacting badly with `Advice` inlining; a matcher subtlety despite the
-element matcher looking correct on inspection. `JndiSensorTest.capturesProvenanceWhenLookupIsInvoked`
+`ProvenanceEvent` is captured, confirmed with a raw `System.out.println` placed as the
+very first line of `JndiAdvice.onEnter()`: it never printed, across multiple runs, even
+though `javap -p javax.naming.InitialContext` on this JDK confirms the exact target
+method exists as expected (`public java.lang.Object lookup(java.lang.String) throws
+javax.naming.NamingException`) and the element matcher
+(`named("lookup").and(takesArguments(1)).and(takesArgument(0, String.class)).and(isPublic())`)
+matches it correctly on inspection.
+
+**Narrowed, not fully root-caused:** the one concrete difference between this sink and
+the two working ones is that `InitialContext` lives in the `java.naming` platform module,
+while `ProcessBuilder` and `ObjectInputStream` both live in `java.base`. `BootstrapInjector`
+makes `provguard.*` classes visible to the bootstrap classloader's *unnamed* module; it is
+plausible that `java.naming`'s module boundary doesn't implicitly "read" that unnamed
+module the way `java.base` does (nearly everything reads `java.base` implicitly; that is
+not true of other platform modules), and that this silently prevents the woven advice
+from linking/executing even though ByteBuddy's own retransformation bookkeeping reports
+success. This would need `Instrumentation.redefineModule(...)` to add an explicit reads
+edge from `java.naming` to wherever the bootstrap-injected classes actually end up
+module-wise, which needs a live reference to that specific module (obtained only after
+injection) to construct correctly — attempted analysis, not attempted fix, given the time
+available. `JndiSensorTest.capturesProvenanceWhenLookupIsInvoked`
 is marked `@Disabled` with this explanation rather than deleted, silently left failing, or
 "fixed" by weakening the assertion — the sensor code is real and the failure is real;
 follow-up work should start by comparing `javax.naming.InitialContext`'s and

@@ -92,10 +92,16 @@ docs/                        architecture, design decisions, roadmap, troublesho
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — full intended architecture, current vs. planned
+- `docs/THREAT_MODEL.md` — what's actually protected against, and what explicitly isn't
+- `docs/SECURITY.md` — reporting, ethics of testing, known security-relevant limitations
 - `docs/DESIGN_DECISIONS.md` — every real decision and bug from building this, with reasoning
 - `docs/WEEKLY_ROADMAP.md` — planned weeks vs. what's actually done
 - `docs/TROUBLESHOOTING.md` — environment issues and their fixes
 - `docs/CORE_JAVA_COVERAGE.md` — concept coverage matrix
+- `docs/STUDY_REPOSITORIES.md` — external repos worth reading, and why
+- `docs/ML_PIPELINE.md`, `docs/DATASET.md`, `docs/EVALUATION.md` — plans only; all
+  explicitly marked not-yet-started rather than left unmentioned
+- `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE` — standard project files
 
 ## License / ethics
 
