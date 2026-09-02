@@ -88,6 +88,40 @@ this stage than an `AnomalyDetector` stub waiting for a model that doesn't exist
 the enforcement layer real and testable now, and gives any future learned model a concrete
 target to beat.
 
+## JFR vs. StackWalker (both are real and both are used, for different reasons)
+
+`provguard.runtime.SinkHitJfrEvent` emits a real custom JFR event on every sink hit,
+verified by `JfrIntegrationTest` (starts a real `jdk.jfr.Recording`, triggers a real sink
+call, stops and dumps the recording, reads the actual `.jfr` file back with
+`RecordingFile`, asserts the event and its fields are really there).
+
+**What each one provides, concretely:**
+- **StackWalkerCollector** gives ProvGuard its own structured call-path data, captured
+  *synchronously* and used *directly* for detection/enforcement — it has to be
+  synchronous, because `BLOCK` mode depends on the decision being ready before control
+  would otherwise return to the sink.
+- **JFR** gives an independent, standard, tooling-friendly event stream that any
+  JFR-aware tool (`jfr print`, JDK Mission Control, `async-profiler`, etc.) can consume
+  without knowing anything about ProvGuard's internals — and, more usefully, lets a sink
+  hit be correlated against JFR's *other* built-in events (GC pauses, CPU sampling,
+  thread activity) on the same recording. That's exactly the kind of profiling that would
+  turn the "almost certainly" hypothesis in
+  `evaluation/results/deserialization-overhead-2026-09-03.md` into an actual proven
+  breakdown — genuine, concrete follow-up work this integration unlocks, not yet done.
+
+**Does combining them help?** Yes, in the sense above (cross-referencing against JFR's
+other events) — but they are NOT redundant with each other and neither can replace the
+other: JFR events are async/buffered and not available in time to gate a blocking
+decision; StackWalkerCollector's capture isn't visible to standard JFR tooling on its own.
+
+**A real gotcha hit building this, worth recording:** a JFR event's registered name
+defaults to its fully-qualified Java class name unless you set `@Name(...)` explicitly.
+The first version of `SinkHitJfrEvent` had no `@Name` annotation, so
+`recording.enable("ProvGuard.SinkHit")` in the test silently matched nothing —
+`Event#isEnabled()` returned `false`, no event ever committed, and the failure gave no
+hint that the *name string* was the problem. Fixed by adding `@Name("ProvGuard.SinkHit")`
+to the event class.
+
 ## Threat model note (honest, per project policy)
 
 Detects/enforces exactly two call patterns today: `ProcessBuilder.start()` and
