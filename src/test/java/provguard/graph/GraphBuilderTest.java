@@ -7,6 +7,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+// Agent attached at JVM startup for the whole test run - see pom.xml and
+// docs/DESIGN_DECISIONS.md section 4G.
 class GraphBuilderTest {
 
     @Test

@@ -25,9 +25,10 @@ A Java agent (`java.lang.instrument`, ByteBuddy) that, for **process execution**
    real body ever runs — this is a genuine prevention mechanism, verified by tests where
    the underlying `ProcessBuilder`/`ObjectInputStream` call demonstrably never executes.
 
-Proven by real, run-verified tests (17 passing, 1 honestly disabled — see below), not
+Proven by real, run-verified tests (20 passing, 1 honestly disabled — see below), not
 mocks: `ProcessExecutionSensorTest`, `DeserializationSensorTest`, `GraphBuilderTest`,
-`AllowlistDetectorTest`, `PolicyEngineTest`, `EnforcementEngineTest`.
+`AllowlistDetectorTest`, `PolicyEngineTest`, `EnforcementEngineTest`,
+`OneClassDistanceDetectorTest`.
 
 Run it yourself:
 ```
@@ -46,13 +47,15 @@ real console output showing the block actually happening.
 | Java agent (premain/agentmain) | ✅ Implemented, tested |
 | ProcessBuilder.start() sensor | ✅ Implemented, tested, verified via real `-javaagent` run |
 | ObjectInputStream.resolveClass() sensor | ✅ Implemented, tested, verified via real `-javaagent` run |
-| InitialContext.lookup(String) sensor | ⚠️ Implemented, but does NOT actually intercept calls — a real, unresolved bug (test disabled, not deleted) — see `docs/DESIGN_DECISIONS.md` §4F |
+| InitialContext.lookup(String) sensor | ⚠️ Implemented, but does NOT actually intercept calls — a real, unresolved bug after 4 fix attempts (test disabled, not deleted) — see `docs/DESIGN_DECISIONS.md` §6 |
 | ScriptEngine.eval() sensor | ❌ Not implemented — this JDK has no bundled ScriptEngine (Nashorn removed) to hook/test against |
 | Provenance graph (nodes/edges/caller extraction) | ✅ Implemented, tested |
-| Detection: allowlist baseline | ✅ Implemented, tested — this is the real DeseriGuard-style baseline the research plan calls for |
-| Detection: learned models (SVM/autoencoder/GNN) | ❌ Not started — needs real training data and a training run, neither of which exist here |
+| Detection: allowlist baseline | ✅ Implemented, tested, **wired into real enforcement** — the DeseriGuard-style baseline the research plan calls for |
+| Detection: statistical one-class baseline (`OneClassDistanceDetector`) | ✅ Implemented, tested on real captured data — NOT wired into enforcement yet (its real, documented limitation: can't distinguish callers with identical call-shape — see `docs/ML_PIPELINE.md`) |
+| Detection: deep learning (autoencoder/GNN) | ❌ Not started — needs real training data, Python/PyTorch, ONNX export, none of which exist here |
 | Enforcement (ALLOW/LOG/BLOCK) | ✅ Implemented, tested — BLOCK genuinely prevents sink execution |
-| Dataset, evaluation framework | ❌ Not started |
+| Local vulnerable fixtures | ✅ 2 fixtures (command execution, deserialization), both actually run and confirmed blocked — see `fixtures/README.md` |
+| Dataset, evaluation framework | ❌ Not started (beyond the small real capture used to train `OneClassDistanceDetector` in its own test) |
 | `study/` Core Java learning modules | ✅ 14 modules, all run-verified — see `study/README.md` |
 
 This is a real, working prototype for its scope — not a pile of placeholder files. What

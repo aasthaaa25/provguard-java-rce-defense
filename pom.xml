@@ -60,24 +60,68 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.2</version>
         <configuration>
-          <argLine>-XX:+EnableDynamicAgentLoading -Dnet.bytebuddy.experimental=true</argLine>
+          <!--
+            Attaches the REAL agent via -javaagent at JVM startup (premain),
+            instead of relying solely on ByteBuddyAgent.install() dynamic
+            self-attach inside each test's @BeforeAll. This matters: JUnit
+            must fully load (and verify) every test class to discover its
+            @Test methods before running any @BeforeAll, and verifying a
+            class's field declarations can eagerly resolve referenced types
+            (e.g. `private final AnomalyDetector detector = ...`) via the
+            application classloader - before any @BeforeAll in that same
+            class gets a chance to run BootstrapInjector first. Attaching at
+            true JVM startup guarantees provguard.* classes are already
+            bootstrap-visible before Surefire loads even the FIRST test
+            class. See docs/DESIGN_DECISIONS.md section 4G.
+          -->
+          <argLine>-XX:+EnableDynamicAgentLoading -Dnet.bytebuddy.experimental=true -javaagent:${project.build.directory}/provguard-agent-early.jar</argLine>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.1</version>
-        <configuration>
-          <archive>
-            <manifestEntries>
-              <Premain-Class>provguard.agent.AgentBootstrap</Premain-Class>
-              <Agent-Class>provguard.agent.AgentBootstrap</Agent-Class>
-              <Can-Redefine-Classes>true</Can-Redefine-Classes>
-              <Can-Retransform-Classes>true</Can-Retransform-Classes>
-              <Launcher-Agent-Class>provguard.agent.AgentBootstrap</Launcher-Agent-Class>
-            </manifestEntries>
-          </archive>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-jar</id>
+            <configuration>
+              <archive>
+                <manifestEntries>
+                  <Premain-Class>provguard.agent.AgentBootstrap</Premain-Class>
+                  <Agent-Class>provguard.agent.AgentBootstrap</Agent-Class>
+                  <Can-Redefine-Classes>true</Can-Redefine-Classes>
+                  <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                  <Launcher-Agent-Class>provguard.agent.AgentBootstrap</Launcher-Agent-Class>
+                </manifestEntries>
+              </archive>
+            </configuration>
+          </execution>
+          <execution>
+            <!--
+              Early, unshaded jar containing only our own compiled classes
+              (ByteBuddy is resolved via Surefire's normal test classpath,
+              which is also placed on the system classpath by -javaagent).
+              Bound before the `test` phase specifically so it exists in
+              time for Surefire's argLine above - the default/shaded jars
+              are only built later, at `package`, which runs after `test`.
+            -->
+            <id>early-agent-jar-for-tests</id>
+            <phase>process-test-classes</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+              <classifier>early</classifier>
+              <archive>
+                <manifestEntries>
+                  <Premain-Class>provguard.agent.AgentBootstrap</Premain-Class>
+                  <Agent-Class>provguard.agent.AgentBootstrap</Agent-Class>
+                  <Can-Redefine-Classes>true</Can-Redefine-Classes>
+                  <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                </manifestEntries>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

@@ -10,6 +10,13 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * The agent is attached at JVM startup for the whole test run (see pom.xml
+ * and docs/DESIGN_DECISIONS.md section 4G) specifically so that pure unit
+ * tests like this one - which reference provguard.graph/detection types
+ * directly, with no sensor/agent code of their own - never risk being the
+ * first thing in the JVM to load those types via the application classloader.
+ */
 class AllowlistDetectorTest {
 
     private final AnomalyDetector detector = new AllowlistDetector(Set.of("trusted.Caller"));

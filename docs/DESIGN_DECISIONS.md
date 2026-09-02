@@ -35,7 +35,7 @@ Only ByteBuddy was needed for this slice (an `Advice`-based hook on
 `ProcessBuilder#start()`). No case for dropping to raw ASM has come up yet — this
 matches the brief's instruction not to use ASM just to inflate the technology list.
 
-## 4. Six real bugs found and fixed while building this (the most valuable content in this file)
+## 4. Seven real bugs found and fixed while building this (the most valuable content in this file)
 
 Both bugs are specific to instrumenting a **bootstrap-classloader-loaded** JDK class
 (`java.lang.ProcessBuilder`) with `Advice`-inlined bytecode that calls back into our own
@@ -185,6 +185,47 @@ immune to identity issues) to confirm it's genuinely our exception. This is also
 semantically correct: a blocked security-sensitive operation is exactly what
 `SecurityException` is for.
 
+### Bug G — pure unit tests touching provguard.* types could be "first" and pin them to the application classloader
+
+**Symptom:** after adding a new test class in `provguard.detection`, previously-passing
+pure unit tests (`AllowlistDetectorTest`, `PolicyEngineTest`, `EnforcementEngineTest`,
+`GraphBuilderTest` - none of which install the agent themselves) started failing with
+`LinkageError: loader constraint violation` and `IncompatibleClassChangeError`, the same
+family of error as Bug B/F but now hitting test-only code, not production code.
+
+**Root cause:** these pure unit tests reference `provguard.graph`/`detection`/`enforcement`
+types directly (as field types, method parameter types, etc.) and never called
+`InstrumentationManager.install(...)` themselves - they relied on *some other* test class
+(a sensor test) happening to run first in the same forked JVM and installing the agent
+before they touched those types. Adding a new test class changed Surefire's execution
+order enough that a pure unit test became the *first* code in the JVM to reference some
+of these types - at which point they got loaded via the application classloader, before
+bootstrap injection had ever run. When a sensor test's `@BeforeAll` installed the agent
+afterwards, the woven code got its own, separate, bootstrap-loaded copies of the same
+classes, and the two sides disagreed on class identity from then on for the rest of the
+JVM's life. Adding `@BeforeAll` calls to the affected test classes individually did NOT
+fix this: JUnit must fully load (and verify) a test class - which can eagerly resolve its
+field types - before it can even run that class's own `@BeforeAll`, so the pinning could
+happen before any in-class fix had a chance to run.
+
+**Fix:** stopped relying on any test's `@BeforeAll` for this entirely. The agent is now
+attached via a real `-javaagent` at JVM startup for the whole `mvn test` run (see
+`pom.xml`'s `maven-jar-plugin` `early-agent-jar-for-tests` execution, bound to
+`process-test-classes` - before the `test` phase - producing an early, unshaded jar
+containing just `provguard.*`, with ByteBuddy resolved via Surefire's normal test
+classpath; and the surefire `argLine`, which points `-javaagent` at that jar). This
+guarantees bootstrap injection happens before Surefire loads even the *first* test class,
+regardless of execution order, permanently closing this entire class of bug rather than
+patching it per-class. All the redundant per-class `ByteBuddyAgent.install()` dynamic
+self-attach calls were then removed as dead weight.
+
+**A real side effect this surfaced:** with the agent genuinely active from JVM startup,
+`ByteBuddyAgent`'s own internal self-attach machinery (which spawns a helper process via
+`ProcessBuilder`) started getting **genuinely blocked** by our own enforcement, since
+`net.bytebuddy.agent.ByteBuddyAgent` was never on the trusted allowlist. This is a real
+demonstration that enforcement works exactly as designed - it just meant the (now
+unnecessary) dynamic self-attach calls needed to go regardless.
+
 ## 6. A known, unresolved limitation (documented, not hidden)
 
 **`InitialContext#lookup(String)` (the JNDI sink) does not actually intercept calls at
@@ -216,13 +257,30 @@ never fires. The module-read grant code was left in place (it's harmless, and ma
 be a real prerequisite even if not sufficient alone) but the root cause is evidently
 something else, or something more than a missing reads edge.
 
-Given two concrete, reasoned fix attempts have now been tried and ruled out, further
-debugging is left as documented follow-up rather than continued open-ended guessing.
-A reasonable next step for whoever picks this up: compare bytecode of the *retransformed*
-`InitialContext.class` (dump it via `-Djdk.attach.allowAttachSelf` + a class-dump agent
-option, or ByteBuddy's own dump feature) against the retransformed `ProcessBuilder.class`
-to see whether the `Advice` bytecode was actually inlined at all, which would show
-definitively whether this is a weaving-time problem or a link/execution-time one.
+**Fix attempt 2, follow-up (also inconclusive):** tried enabling ByteBuddy's bytecode-dump
+feature (`-Dnet.bytebuddy.dump=<dir>`, set via the surefire `argLine`) to compare the
+actual retransformed bytecode of `InitialContext` against `ProcessBuilder`'s. The dump
+directory stayed empty for *both* classes — the dump mechanism itself never activated in
+this configuration (likely needs to be wired through `AgentBuilder`'s own API rather than
+only the system property, which apparently isn't sufficient for this ByteBuddy
+version/setup). This didn't produce new evidence either way; it just means this
+particular diagnostic technique needs more setup than was tried before it can be useful.
+
+**Fix attempt 3 (ruled out):** once the test infrastructure was changed to attach the
+agent via a real static `-javaagent` at JVM startup instead of dynamic self-attach (see
+section 4G above), the JNDI sensor was re-tested under this genuinely different attach
+mechanism, on the theory that static vs. dynamic attach might matter for a
+platform-module class. It did not fix it - the woven Advice still never executes when
+`lookup()` is genuinely invoked, exactly as before.
+
+Given four concrete, reasoned diagnostic/fix attempts have now been tried without
+resolving it, further debugging is left as documented follow-up rather than continued
+open-ended guessing. A reasonable next step for whoever picks this up: get the ByteBuddy
+dump working properly (via `AgentBuilder`'s dump configuration API, not just the system
+property) to see whether the `Advice` bytecode is actually inlined into the retransformed
+`InitialContext` class at all — that would show definitively whether this is a
+weaving-time problem (bytecode never actually changed) or a link/execution-time one
+(bytecode changed but something prevents it from running).
 `JndiSensorTest.capturesProvenanceWhenLookupIsInvoked`
 is marked `@Disabled` with this explanation rather than deleted, silently left failing, or
 "fixed" by weakening the assertion — the sensor code is real and the failure is real;

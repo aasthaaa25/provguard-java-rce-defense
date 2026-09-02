@@ -1,16 +1,12 @@
 package provguard.sensors;
 
-import net.bytebuddy.agent.ByteBuddyAgent;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import provguard.agent.InstrumentationManager;
 import provguard.provenance.EventBuffer;
 import provguard.provenance.ProvenanceEvent;
 import provguard.provenance.SinkType;
 
 import java.io.IOException;
-import java.lang.instrument.Instrumentation;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,20 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Proves the sensor actually intercepts a real JDK call, end to end: dynamically
- * attaches an agent to this very test JVM, installs the ProcessBuilder hook,
- * invokes ProcessBuilder.start() for real, and asserts a ProvenanceEvent was
- * captured with a call stack that genuinely includes this test class. Also
- * proves the enforcement layer's BLOCK path genuinely prevents the sink from
- * running, for a caller not on the trusted allowlist.
+ * Proves the sensor actually intercepts a real JDK call, end to end. The
+ * agent is attached via -javaagent at JVM startup for the whole test run
+ * (see pom.xml's surefire argLine and docs/DESIGN_DECISIONS.md section 4G)
+ * rather than per-class dynamic self-attach, so no setup is needed here
+ * beyond what @BeforeEach already does.
  */
 class ProcessExecutionSensorTest {
-
-    @BeforeAll
-    static void installAgent() {
-        Instrumentation instrumentation = ByteBuddyAgent.install();
-        InstrumentationManager.install(instrumentation);
-    }
 
     @BeforeEach
     void clearBuffer() {

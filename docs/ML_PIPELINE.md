@@ -1,9 +1,23 @@
 # ML Pipeline
 
-**Status: not started.** No training code, no model, no ONNX export, no Java-side
-inference exists in this repository. This document records the plan, not a claim of
-progress — see `README.md` "Current status" and `docs/WEEKLY_ROADMAP.md` for what
-actually exists (`provguard.detection.AllowlistDetector`, a non-learned baseline).
+**Status: a real first rung exists; the GNN/deep-learning stretch goal does not.** No
+Python training code, no ONNX export, no DJL/ONNX-Runtime-Java inference exists in this
+repository. What DOES exist, real and tested: `provguard.detection.OneClassDistanceDetector`
+— a benign-only, statistical (not deep-learning) novelty detector, genuinely trained on
+`FeatureVector`s extracted from real `ProvenanceGraph`s produced by actually triggering
+the ProcessBuilder sensor (see `OneClassDistanceDetectorTest`, which captures real data,
+not invented numbers). It is a z-score-style distance check over two features (call-stack
+depth, edge count) — the honest first step of the "learned model" ladder in the original
+research plan, not a placeholder and not a GNN.
+
+**A real, documented limitation, made concrete by a test
+(`demonstratesTheDocumentedLimitation_sameShapeDifferentCallerIsNotCaught`):**
+depth/edge-count alone cannot distinguish a benign caller from a malicious one that
+happens to produce a structurally identical call (same depth, same edge count). This is
+exactly why `AllowlistDetector` (caller-identity-based) is the detector actually wired
+into `provguard.enforcement.Policy` today — `OneClassDistanceDetector` is real and tested
+but not yet plugged into enforcement, because it isn't yet good enough to replace the
+allowlist.
 
 ## Planned approach (from the original ProvGuard research plan)
 

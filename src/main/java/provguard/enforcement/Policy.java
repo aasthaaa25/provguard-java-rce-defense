@@ -23,7 +23,8 @@ public final class Policy {
             "provguard.cli.DemoMain",
             "provguard.sensors.ProcessExecutionSensorTest",
             "provguard.sensors.DeserializationSensorTest",
-            "provguard.sensors.JndiSensorTest"
+            "provguard.sensors.JndiSensorTest",
+            "provguard.detection.OneClassDistanceDetectorTest"
     ));
 
     public static volatile boolean blockingEnabled = true;

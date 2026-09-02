@@ -1,16 +1,12 @@
 package provguard.sensors;
 
-import net.bytebuddy.agent.ByteBuddyAgent;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import provguard.agent.InstrumentationManager;
 import provguard.provenance.EventBuffer;
 import provguard.provenance.ProvenanceEvent;
 import provguard.provenance.SinkType;
 
 import java.io.*;
-import java.lang.instrument.Instrumentation;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,15 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 /**
  * Proves the deserialization sensor intercepts a REAL
  * ObjectInputStream#resolveClass call - this test actually serializes and
- * then deserializes an object, it does not mock ObjectInputStream.
+ * then deserializes an object, it does not mock ObjectInputStream. The agent
+ * is attached at JVM startup for the whole test run - see pom.xml and
+ * docs/DESIGN_DECISIONS.md section 4G.
  */
 class DeserializationSensorTest {
-
-    @BeforeAll
-    static void installAgent() {
-        Instrumentation instrumentation = ByteBuddyAgent.install();
-        InstrumentationManager.install(instrumentation);
-    }
 
     @BeforeEach
     void clearBuffer() {
